@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: dj-liker-premium
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: FACEBOOK_EMAIL
+        value: votre_email@facebook.com
+      - key: FACEBOOK_PASSWORD
+        value: votre_mot_de_passe
+    plan: free
+    healthCheckPath: /health
