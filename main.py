@@ -32,11 +32,14 @@ class PremiumDJLiker(Client):
         self.session_file = SESSION_FILE
         self.session_cookies = self.load_session()
         
+        # CORRECTION : Passer user_agent dans session_cookies ou utiliser approche différente
+        session_data = self.session_cookies or {}
+        
         super().__init__(
             email=EMAIL,
             password=PASSWORD,
-            session_cookies=self.session_cookies,
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            session_cookies=session_data
+            # Supprimer user_agent de l'appel parent
         )
         
         # 🎯 CONFIGURATION AVEC PAUSES
@@ -156,9 +159,11 @@ class PremiumDJLiker(Client):
     def login(self):
         try:
             if self.session_cookies:
+                # CORRECTION : Appel sans paramètres supplémentaires
                 super().login()
                 logger.info("✅ Session premium chargée")
             else:
+                # CORRECTION : Appel standard sans user_agent
                 super().login(EMAIL, PASSWORD)
                 self.save_session()
                 logger.info("✅ Nouvelle session premium")
