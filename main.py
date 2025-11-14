@@ -39,36 +39,28 @@ class PremiumDJLiker(Client):
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
         
-        # 🎯 CONFIGURATION PRÉCISE SELON VOS BESOINS
+        # 🎯 CONFIGURATION AVEC PAUSES
         self.premium_config = {
-            'active_hours': {
-                'morning_session': {'start': '08:00', 'end': '14:00', 'intensity': 'high'},
-                'pause': {'start': '14:00', 'end': '15:00', 'intensity': 'none'},
-                'evening_session': {'start': '16:30', 'end': '01:00', 'intensity': 'very_high'}
-            },
-            
             'engagement_strategy': {
-                'news_feed_priority': 80,    # 80% d'actions sur fil actu
-                'favorites_priority': 20,    # 20% sur favoris
-                'like_all_posts': True,      # Like TOUTES les publications
-                'smart_commenting': True,    # Commentaires intelligents
-                'random_reactions': True     # Réactions aléatoires
+                'news_feed_priority': 80,
+                'favorites_priority': 20,
+                'like_all_posts': True,
+                'smart_commenting': True,
+                'random_reactions': True
             },
             
             'safety_limits': {
-                # 🛡️ LIMITES ANTI-BAN STRICTES
-                'max_actions_per_hour': 35,
-                'max_comments_per_hour': 12,
-                'max_friend_actions': 8,
-                'min_delay_between_actions': 10,
-                'max_delay_between_actions': 25,
-                'daily_action_limit': 250
+                'max_actions_per_hour': 30,  # Réduit pour sécurité
+                'max_comments_per_hour': 10,
+                'min_delay_between_actions': 12,  # Augmenté
+                'max_delay_between_actions': 30,  # Augmenté
+                'daily_action_limit': 200  # Réduit
             },
             
             'reactions_arsenal': {
                 'enabled': True,
                 'reactions': ['❤️', '👍', '🥰', '🤣', '😮', '😥', '😡'],
-                'weights': [30, 25, 15, 10, 10, 5, 5]  # Probabilités
+                'weights': [30, 25, 15, 10, 10, 5, 5]
             }
         }
         
@@ -79,7 +71,8 @@ class PremiumDJLiker(Client):
             'hourly_actions': 0,
             'daily_actions': 0,
             'last_action_time': None,
-            'session_active': False
+            'session_active': False,
+            'initialized': False
         }
         
         self.load_stats()
@@ -113,57 +106,51 @@ class PremiumDJLiker(Client):
             logger.warning(f"Stats save: {e}")
 
     def is_active_time(self):
-        """Vérifier si on est dans les heures d'activité"""
+        """Vérifier si on est dans les heures d'activité AVEC PAUSES"""
         now = datetime.now()
         current_time = now.strftime("%H:%M")
+        current_hour = now.hour
         
-        # Session matinale 8h-14h
-        if "08:00" <= current_time <= "14:00":
-            return True
-        
-        # Session soirée 16h30-1h
-        if "16:30" <= current_time <= "23:59" or "00:00" <= current_time <= "01:00":
-            return True
-        
-        return False
-
-    def safety_check(self):
-        """Vérifications de sécurité avancées"""
-        if not self.is_active_time():
-            logger.info("⏰ Hors des heures d'activité")
+        # 🕛 PAUSE NUIT (00h-08h) - ❌ AUCUNE ACTIVITÉ
+        if 0 <= current_hour < 8:
+            logger.info("🌙 PAUSE NUIT - Bot en sommeil")
             return False
         
-        # Vérifier limites horaires
+        # 🕒 PAUSE DÉJEUNER (13h-15h) - ❌ AUCUNE ACTIVITÉ
+        if 13 <= current_hour < 15:
+            logger.info("🍽️ PAUSE DÉJEUNER - Bot en pause")
+            return False
+        
+        # ✅ HEURES D'ACTIVITÉ
+        logger.info("🎯 HEURE D'ACTIVITÉ - Bot actif")
+        return True
+
+    def safety_check(self):
+        """Vérifications de sécurité AVEC PAUSES"""
+        if not self.is_active_time():
+            return False
+        
         if self.stats['hourly_actions'] >= self.premium_config['safety_limits']['max_actions_per_hour']:
             logger.warning(f"🚨 Limite horaire: {self.stats['hourly_actions']}")
             return False
         
-        # Vérifier limites quotidiennes
         if self.stats['daily_actions'] >= self.premium_config['safety_limits']['daily_action_limit']:
             logger.warning(f"🚨 Limite quotidienne: {self.stats['daily_actions']}")
             return False
         
-        # Vérifier vitesse d'actions
-        if self.stats['last_action_time']:
-            time_diff = (datetime.now() - datetime.fromisoformat(self.stats['last_action_time'])).seconds
-            if time_diff < 8:  # Trop rapide
-                logger.warning("🚨 Actions trop rapides")
-                return False
-        
         return True
 
     def human_like_delay(self):
-        """Délai humain réaliste"""
+        """Délai humain réaliste PLUS LONG"""
         delay = random.randint(
             self.premium_config['safety_limits']['min_delay_between_actions'],
             self.premium_config['safety_limits']['max_delay_between_actions']
         )
         
-        # Variation naturelle
-        if random.random() < 0.15:  # 15% de pauses plus longues
-            delay += random.randint(5, 15)
+        if random.random() < 0.2:  # 20% de pauses plus longues
+            delay += random.randint(10, 20)
         
-        logger.info(f"⏰ Délai: {delay}s")
+        logger.info(f"⏰ Délai sécurité: {delay}s")
         time.sleep(delay)
 
     def login(self):
@@ -175,6 +162,9 @@ class PremiumDJLiker(Client):
                 super().login(EMAIL, PASSWORD)
                 self.save_session()
                 logger.info("✅ Nouvelle session premium")
+            
+            self.stats['initialized'] = True
+            self.save_stats()
             return True
         except Exception as e:
             logger.error(f"❌ Erreur connexion: {e}")
@@ -182,23 +172,27 @@ class PremiumDJLiker(Client):
 
     def engage_news_feed_comprehensive(self):
         """Engagement COMPLET du fil d'actualité"""
+        if not self.safety_check():
+            logger.info("⏰ Hors créneau - Session annulée")
+            return 0
+            
         logger.info("📰 ENGAGEMENT TOTAL FIL D'ACTUALITÉ")
         
         try:
             actions_performed = 0
-            max_actions = random.randint(15, 25)  # Batch réaliste
+            max_actions = random.randint(12, 20)  # Réduit pour sécurité
             
             for i in range(max_actions):
                 if not self.safety_check():
                     break
                 
-                # Like systématique (comme demandé)
+                # Like systématique
                 post_id = f"news_feed_post_{random.randint(10000, 99999)}"
                 # self.likePost(post_id)
                 logger.info("❤️ LIKE AUTO - Publication fil actu")
                 
-                # Réaction aléatoire (70% de chance)
-                if random.random() < 0.7:
+                # Réaction aléatoire (60% de chance)
+                if random.random() < 0.6:
                     reaction = random.choices(
                         self.premium_config['reactions_arsenal']['reactions'],
                         weights=self.premium_config['reactions_arsenal']['weights']
@@ -206,8 +200,8 @@ class PremiumDJLiker(Client):
                     # self.reactToPost(post_id, reaction)
                     logger.info(f"{reaction} RÉACTION AUTO - Fil actu")
                 
-                # Commentaire intelligent (40% de chance)
-                if random.random() < 0.4:
+                # Commentaire intelligent (30% de chance)
+                if random.random() < 0.3:
                     comment = self.generate_smart_comment()
                     # self.commentOnPost(post_id, comment)
                     logger.info(f"💬 COMMENTAIRE: {comment}")
@@ -217,13 +211,13 @@ class PremiumDJLiker(Client):
                 
                 self.human_like_delay()
                 
-                # Pause micro toutes les 8 actions
-                if actions_performed % 8 == 0:
-                    pause = random.randint(20, 40)
-                    logger.info(f"💤 Pause fil actu: {pause}s")
+                # Pause micro toutes les 6 actions
+                if actions_performed % 6 == 0:
+                    pause = random.randint(30, 60)
+                    logger.info(f"💤 Pause sécurité: {pause}s")
                     time.sleep(pause)
             
-            logger.info(f"✅ Fil actu: {actions_performed} actions complètes")
+            logger.info(f"✅ Fil actu: {actions_performed} actions sécurisées")
             return actions_performed
             
         except Exception as e:
@@ -232,11 +226,14 @@ class PremiumDJLiker(Client):
 
     def engage_favorites_intensive(self):
         """Engagement INTENSIF des favoris"""
+        if not self.safety_check():
+            return 0
+            
         logger.info("⭐ ENGAGEMENT INTENSIF FAVORIS")
         
         try:
             actions_performed = 0
-            max_actions = random.randint(8, 15)
+            max_actions = random.randint(6, 12)  # Réduit pour sécurité
             
             for i in range(max_actions):
                 if not self.safety_check():
@@ -247,14 +244,14 @@ class PremiumDJLiker(Client):
                 # self.likePost(favorite_id)
                 logger.info("❤️ LIKE AUTO - Favori")
                 
-                # Réaction favoris (80% de chance)
-                if random.random() < 0.8:
+                # Réaction favoris (70% de chance)
+                if random.random() < 0.7:
                     reaction = random.choice(['❤️', '🥰', '👍', '😮'])
                     # self.reactToPost(favorite_id, reaction)
                     logger.info(f"{reaction} RÉACTION - Favori")
                 
-                # Commentaire personnalisé favoris (50% de chance)
-                if random.random() < 0.5:
+                # Commentaire personnalisé favoris (40% de chance)
+                if random.random() < 0.4:
                     comment = random.choice([
                         "Toujours du contenu qualité! 🌟",
                         "Merci pour l'inspiration quotidienne! 🚀",
@@ -270,7 +267,7 @@ class PremiumDJLiker(Client):
                 
                 self.human_like_delay()
             
-            logger.info(f"✅ Favoris: {actions_performed} actions intensives")
+            logger.info(f"✅ Favoris: {actions_performed} actions sécurisées")
             return actions_performed
             
         except Exception as e:
@@ -323,13 +320,13 @@ class PremiumDJLiker(Client):
             logger.info("🔄 Compteur horaire reset")
 
     def premium_engagement_session(self):
-        """Session d'engagement PREMIUM complète"""
-        logger.info("🚀 DÉMARAGE SESSION PREMIUM")
+        """Session d'engagement PREMIUM sécurisée"""
+        logger.info("🚀 DÉMARRAGE SESSION PREMIUM SÉCURISÉE")
         
         if not self.is_active_time():
-            logger.info("⏰ Hors créneau - Session annulée")
+            logger.info("⏰ HORS CRÉNEAU - Session annulée (pause sécurité)")
             return 0
-        
+            
         self.reset_hourly_counter()
         
         try:
@@ -342,20 +339,17 @@ class PremiumDJLiker(Client):
             )[0]
             
             if strategy_choice == 'news_feed':
-                # Session intensive fil d'actualité
                 news_actions = self.engage_news_feed_comprehensive()
                 total_actions += news_actions
                 
-                # Occasionnellement ajouter favoris
-                if random.random() < 0.3:  # 30% chance
+                if random.random() < 0.3 and self.safety_check():
                     fav_actions = self.engage_favorites_intensive()
                     total_actions += fav_actions
             else:
-                # Session focalisée favoris
                 fav_actions = self.engage_favorites_intensive()
                 total_actions += fav_actions
             
-            logger.info(f"🎯 Session premium: {total_actions} actions")
+            logger.info(f"🎯 Session sécurisée: {total_actions} actions")
             return total_actions
             
         except Exception as e:
@@ -370,19 +364,22 @@ class PremiumDJLiker(Client):
             'favorites_actions': self.stats['favorites_actions'],
             'hourly_actions': self.stats['hourly_actions'],
             'daily_actions': self.stats['daily_actions'],
+            'initialized': self.stats['initialized'],
             'active_time': self.is_active_time(),
-            'status': 'PREMIUM_ACTIVE'
+            'status': 'PREMIUM_ACTIVE_SAFE'
         }
 
 # Routes Flask
 @app.route('/')
 def home():
     return """
-    🚀 DJ Liker PREMIUM - Activité Maximale Sécurisée
-    <br>📅 Planning: 8h-14h & 16h30-1h
-    <br>🎯 Cibles: Fil actu + Favoris
-    <br>🛡️ Statut: ANTI-BAN ACTIVÉ
+    🚀 DJ Liker PREMIUM - Mode Sécurisé
+    <br>🎯 Activité: 08h-13h & 15h-00h
+    <br>🛑 Pauses: 13h-15h & 00h-08h
+    <br>🛡️ Statut: ANTI-BAN MAXIMUM
     <br><a href="/stats">📊 Voir les stats</a>
+    <br><a href="/start-now">🚀 Démarrer maintenant</a>
+    <br><a href="/schedule">📅 Voir planning</a>
     """
 
 @app.route('/stats')
@@ -390,60 +387,138 @@ def stats():
     liker = app.config.get('liker')
     if liker:
         return liker.get_detailed_stats()
-    return {"status": "not_initialized"}
+    return {"status": "not_initialized", "message": "Utilisez /start-now pour démarrer"}
 
 @app.route('/health')
 def health():
-    return {"status": "healthy", "service": "dj_liker_premium"}
+    return {"status": "healthy", "service": "dj_liker_premium_safe", "timestamp": datetime.now().isoformat()}
+
+@app.route('/start-now')
+def start_now():
+    """Démarrer le bot immédiatement (si dans les heures actives)"""
+    try:
+        logger.info("🎯 DÉMARRAGE MANUEL DEMANDÉ")
+        
+        liker = PremiumDJLiker()
+        if liker.login():
+            # Vérifier si on est dans les heures actives
+            if not liker.is_active_time():
+                return {
+                    "status": "paused",
+                    "message": "⏰ Bot en pause (hors créneau). Activité: 08h-13h & 15h-00h"
+                }
+            
+            # Démarrer une session immédiate
+            actions = liker.premium_engagement_session()
+            app.config['liker'] = liker
+            
+            return {
+                "status": "success",
+                "actions": actions,
+                "message": f"✅ Bot démarré! {actions} actions effectuées"
+            }
+        else:
+            return {"status": "error", "message": "❌ Échec connexion Facebook"}
+            
+    except Exception as e:
+        logger.error(f"❌ Erreur démarrage: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.route('/schedule')
+def show_schedule():
+    """Afficher le planning des pauses"""
+    schedule_info = {
+        "active_periods": [
+            "08:00-13:00 → Matinée intensive",
+            "15:00-00:00 → Soirée active"
+        ],
+        "pauses": [
+            "13:00-15:00 → Pause déjeuner",
+            "00:00-08:00 → Pause nuit"
+        ],
+        "sessions_auto": [
+            "08:30, 10:00, 11:30",
+            "15:30, 17:00, 19:00, 21:00, 23:00"
+        ],
+        "current_time": datetime.now().strftime("%H:%M"),
+        "is_active_now": PremiumDJLiker().is_active_time()
+    }
+    return schedule_info
 
 class PremiumScheduler:
     def __init__(self):
         self.liker = None
         self.is_running = True
     
-    def initialize(self):
-        if not self.liker:
+    def initialize_bot(self):
+        """Initialiser le bot Facebook"""
+        try:
+            logger.info("🎯 INITIALISATION AUTOMATIQUE DU BOT SÉCURISÉ...")
             self.liker = PremiumDJLiker()
-            return self.liker.login()
-        return True
+            success = self.liker.login()
+            
+            if success:
+                logger.info("✅ BOT INITIALISÉ AVEC SUCCÈS!")
+                app.config['liker'] = self.liker
+                
+                # 🚀 DÉMARRER IMMÉDIATEMENT UNE SESSION (si heure active)
+                if self.liker.is_active_time():
+                    logger.info("🚀 DÉMARRAGE SESSION IMMÉDIATE...")
+                    Thread(target=self.run_premium_session, daemon=True).start()
+                else:
+                    logger.info("⏰ Hors créneau - Session différée")
+                
+                return True
+            else:
+                logger.error("❌ ÉCHEC INITIALISATION BOT")
+                return False
+                
+        except Exception as e:
+            logger.error(f"💥 ERREUR INITIALISATION: {e}")
+            return False
     
     def run_premium_session(self):
-        if not self.initialize():
+        """Exécuter une session (avec vérification heure)"""
+        if not self.liker:
+            logger.error("❌ Bot non initialisé")
+            return
+        
+        # Vérifier si on est dans les heures actives
+        if not self.liker.is_active_time():
+            logger.info("⏰ Hors créneau - Session annulée")
             return
         
         try:
-            logger.info("🎯 Activation session premium programmée")
+            logger.info("🎯 DÉMARRAGE SESSION PROGRAMMÉE")
             actions = self.liker.premium_engagement_session()
-            logger.info(f"✅ Session programmée: {actions} actions")
+            logger.info(f"✅ Session terminée: {actions} actions")
+            
         except Exception as e:
-            logger.error(f"❌ Session programmée échouée: {e}")
+            logger.error(f"❌ Erreur session: {e}")
     
     def start_premium_schedule(self):
-        """PLANIFICATION PRÉCISE SELON VOS BESOINS"""
+        """🕒 PLANIFICATION AVEC PAUSES SÉCURISÉES"""
         
-        # 🕗 SESSION MATINALE INTENSIVE (8h-14h)
-        schedule.every().day.at("08:00").do(self.run_premium_session)
-        schedule.every().day.at("09:30").do(self.run_premium_session)
-        schedule.every().day.at("11:00").do(self.run_premium_session)
-        schedule.every().day.at("12:30").do(self.run_premium_session)
-        schedule.every().day.at("13:45").do(self.run_premium_session)  # Dernière avant pause
+        # 🕗 MATINÉE INTENSIVE (08h-13h)
+        schedule.every().day.at("08:30").do(self.run_premium_session)
+        schedule.every().day.at("10:00").do(self.run_premium_session)
+        schedule.every().day.at("11:30").do(self.run_premium_session)
         
-        # 🕒 PAUSE (14h-15h) - AUCUNE ACTIVITÉ
+        # 🕒 PAUSE DÉJEUNER (13h-15h) - ❌ RIEN
         
-        # 🕟 SESSION SOIRÉE TRÈS ACTIVE (16h30-1h)
-        schedule.every().day.at("16:30").do(self.run_premium_session)
-        schedule.every().day.at("18:00").do(self.run_premium_session)
-        schedule.every().day.at("19:30").do(self.run_premium_session)
+        # 🕟 APRÈS-MIDI ACTIF (15h-00h)
+        schedule.every().day.at("15:30").do(self.run_premium_session)
+        schedule.every().day.at("17:00").do(self.run_premium_session)
+        schedule.every().day.at("19:00").do(self.run_premium_session)
         schedule.every().day.at("21:00").do(self.run_premium_session)
-        schedule.every().day.at("22:30").do(self.run_premium_session)
-        schedule.every().day.at("00:00").do(self.run_premium_session)  # Minuit
-        schedule.every().day.at("00:45").do(self.run_premium_session)  # Dernière à 00h45
+        schedule.every().day.at("23:00").do(self.run_premium_session)
+        
+        # 🕛 PAUSE NUIT (00h-08h) - ❌ RIEN
         
         # 🔄 MAINTENANCE
         schedule.every(1).hours.do(self.reset_counters)
-        schedule.every(6).hours.do(self.show_stats)
         
-        logger.info("📅 PLANIFICATEUR PREMIUM DÉMARRÉ - Planning exact chargé")
+        logger.info("📅 PLANIFICATEUR SÉCURISÉ ACTIVÉ - Pauses intégrées")
         
         while self.is_running:
             try:
@@ -456,30 +531,32 @@ class PremiumScheduler:
     def reset_counters(self):
         if self.liker:
             self.liker.reset_hourly_counter()
-    
-    def show_stats(self):
-        if self.liker:
-            stats = self.liker.get_detailed_stats()
-            logger.info(f"📊 Stats live: {stats}")
 
 def run_flask():
-    """Démarrer Flask pour Render - CORRIGÉ AVEC PORT"""
+    """Démarrer Flask pour Render"""
     port = int(os.environ.get('PORT', 10000))
-    logger.info(f"🌐 Démarrage serveur Flask sur le port {port}")
+    logger.info(f"🌐 Démarrage serveur sur le port {port}")
     app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 def main():
-    logger.info("🚀 DJ LIKER PREMIUM - Démarrage sur Render")
+    logger.info("🚀 DJ LIKER PREMIUM SÉCURISÉ - DÉMARRAGE")
     
-    # Initialiser le scheduler premium
+    # 🎯 INITIALISER ET DÉMARRER LE BOT
     scheduler = PremiumScheduler()
-    app.config['liker'] = scheduler.liker
+    app.config['scheduler'] = scheduler
     
-    # Démarrer le scheduler
+    # DÉMARRAGE AUTOMATIQUE AU LANCEMENT
+    logger.info("🎯 TENTATIVE DE DÉMARRAGE AUTOMATIQUE...")
+    init_thread = Thread(target=scheduler.initialize_bot, daemon=True)
+    init_thread.start()
+    
+    # DÉMARRER LE PLANIFICATEUR
     scheduler_thread = Thread(target=scheduler.start_premium_schedule, daemon=True)
     scheduler_thread.start()
     
-    # Démarrer Flask
+    logger.info("✅ APPLICATION PRÊTE - Mode sécurisé activé")
+    
+    # DÉMARRER FLASK
     run_flask()
 
 if __name__ == "__main__":
