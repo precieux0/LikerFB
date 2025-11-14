@@ -1,5 +1,4 @@
-from fbchat import Client
-from fbchat.models import *
+from flask import Flask
 import logging
 import time
 import random
@@ -7,8 +6,13 @@ import json
 import os
 import schedule
 from threading import Thread
-from datetime import datetime, timedelta
-from flask import Flask
+from datetime import datetime
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 app = Flask(__name__)
 
@@ -23,77 +27,421 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-EMAIL = os.getenv('FACEBOOK_EMAIL')
-PASSWORD = os.getenv('FACEBOOK_PASSWORD')
-SESSION_FILE = "/tmp/premium_session.json"
-
-class PremiumDJLiker(Client):
+class UltimateFacebookBot:
     def __init__(self):
-        self.session_file = SESSION_FILE
-        self.session_cookies = self.load_session()
+        self.setup_driver()
+        self.wait = WebDriverWait(self.driver, 20)
         
-        # CORRECTION : Appel simple du constructeur parent sans paramètres supplémentaires
-        if self.session_cookies:
-            super().__init__(session_cookies=self.session_cookies)
-        else:
-            super().__init__(email=EMAIL, password=PASSWORD)
+        # Compte Facebook
+        self.email = os.getenv('FACEBOOK_EMAIL')
+        self.password = os.getenv('FACEBOOK_PASSWORD')
         
-        # 🎯 CONFIGURATION AVEC PAUSES
-        self.premium_config = {
-            'engagement_strategy': {
-                'news_feed_priority': 80,
-                'favorites_priority': 20,
-                'like_all_posts': True,
-                'smart_commenting': True,
-                'random_reactions': True
-            },
-            
-            'safety_limits': {
-                'max_actions_per_hour': 30,
-                'max_comments_per_hour': 10,
-                'min_delay_between_actions': 12,
-                'max_delay_between_actions': 30,
-                'daily_action_limit': 200
-            },
-            
-            'reactions_arsenal': {
-                'enabled': True,
-                'reactions': ['❤️', '👍', '🥰', '🤣', '😮', '😥', '😡'],
-                'weights': [30, 25, 15, 10, 10, 5, 5]
-            }
+        # Configuration des réactions
+        self.reactions = {
+            'like': '❤️',
+            'love': '🥰', 
+            'care': '😍',
+            'haha': '😂',
+            'wow': '😮',
+            'sad': '😢',
+            'angry': '😠'
         }
         
+        logger.info("🤖 BOT ULTIME FACEBOOK INITIALISÉ")
+
+    def setup_driver(self):
+        """Configuration avancée du navigateur"""
+        chrome_options = Options()
+        
+        # Configuration Render
+        chrome_options.add_argument('--headless=new')
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument('--disable-gpu')
+        chrome_options.add_argument('--window-size=1920,1080')
+        
+        # Furtivité
+        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        
+        self.driver = webdriver.Chrome(options=chrome_options)
+        self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+
+    def login(self):
+        """Connexion robuste à Facebook"""
+        try:
+            logger.info("🔐 CONNEXION FACEBOOK EN COURS...")
+            
+            self.driver.get("https://www.facebook.com")
+            time.sleep(4)
+
+            # Gestion cookies
+            try:
+                cookie_buttons = self.driver.find_elements(By.XPATH, "//button[contains(string(), 'Autoriser')]")
+                if cookie_buttons:
+                    cookie_buttons[0].click()
+                    time.sleep(2)
+            except:
+                pass
+
+            # Email
+            email_field = self.wait.until(EC.presence_of_element_located((By.NAME, "email")))
+            email_field.clear()
+            self.slow_type(email_field, self.email)
+            logger.info("📧 Email saisi")
+
+            # Mot de passe
+            password_field = self.driver.find_element(By.NAME, "pass")
+            password_field.clear()
+            self.slow_type(password_field, self.password)
+            logger.info("🔑 Mot de passe saisi")
+
+            # Connexion
+            login_button = self.driver.find_element(By.NAME, "login")
+            login_button.click()
+            logger.info("🖱️ Clic connexion")
+
+            # Attendre connexion
+            time.sleep(6)
+
+            # Vérifier connexion
+            if "facebook.com" in self.driver.current_url and "login" not in self.driver.current_url:
+                logger.info("✅ CONNECTÉ À FACEBOOK !")
+                return True
+            else:
+                logger.error("❌ Échec connexion")
+                return False
+
+        except Exception as e:
+            logger.error(f"💥 ERREUR CONNEXION: {e}")
+            return False
+
+    def slow_type(self, element, text):
+        """Taper comme un humain"""
+        for char in text:
+            element.send_keys(char)
+            time.sleep(random.uniform(0.1, 0.3))
+
+    def scroll_and_engage(self, max_actions=20):
+        """ENGAGEMENT COMPLET CONSTANT sur le fil"""
+        try:
+            logger.info(f"📰 ENGAGEMENT CONSTANT POUR {max_actions} ACTIONS...")
+            
+            self.driver.get("https://www.facebook.com")
+            time.sleep(5)
+            
+            actions_performed = 0
+            consecutive_failures = 0
+            
+            while actions_performed < max_actions and consecutive_failures < 5:
+                # Chercher des posts à engager
+                posts = self.find_engageable_posts()
+                
+                if posts:
+                    post = random.choice(posts)
+                    success = self.engage_post(post)
+                    
+                    if success:
+                        actions_performed += 1
+                        consecutive_failures = 0
+                        logger.info(f"🎯 ACTION #{actions_performed} RÉUSSIE")
+                        
+                        # Délai variable entre actions
+                        delay = random.randint(12, 25)
+                        logger.info(f"⏰ Délai: {delay}s")
+                        time.sleep(delay)
+                    else:
+                        consecutive_failures += 1
+                else:
+                    consecutive_failures += 1
+                    logger.info("🔍 Aucun post trouvé, scrolling...")
+                
+                # Scroller pour nouveaux posts
+                self.smart_scroll()
+                
+                # Petite pause après scroll
+                time.sleep(random.randint(3, 7))
+
+            logger.info(f"✅ ENGAGEMENT TERMINÉ: {actions_performed} actions")
+            return actions_performed
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur engagement: {e}")
+            return 0
+
+    def find_engageable_posts(self):
+        """Trouver les posts engageables"""
+        try:
+            # Sélecteurs pour les posts
+            post_selectors = [
+                "//div[@role='article']",
+                "//div[contains(@class, 'userContentWrapper')]",
+                "//div[@data-ad-preview='message']"
+            ]
+            
+            posts = []
+            for selector in post_selectors:
+                try:
+                    elements = self.driver.find_elements(By.XPATH, selector)
+                    posts.extend(elements)
+                except:
+                    continue
+            
+            return posts[:10]  # Limiter à 10 posts
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Erreur recherche posts: {e}")
+            return []
+
+    def engage_post(self, post_element):
+        """Engager un post spécifique (like, réaction, commentaire)"""
+        try:
+            # Faire défiler jusqu'au post
+            self.driver.execute_script("arguments[0].scrollIntoView();", post_element)
+            time.sleep(2)
+            
+            # Décider de l'action (60% like, 30% réaction, 10% commentaire)
+            action_choice = random.random()
+            
+            if action_choice < 0.6:
+                return self.like_post(post_element)
+            elif action_choice < 0.9:
+                return self.react_to_post(post_element)
+            else:
+                return self.comment_on_post(post_element)
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Erreur engagement post: {e}")
+            return False
+
+    def like_post(self, post_element):
+        """Like un post"""
+        try:
+            like_selectors = [
+                ".//div[@aria-label='J'aime']",
+                ".//span[text()='J'aime']/..",
+                ".//div[contains(@aria-label, 'J'aime')]"
+            ]
+            
+            for selector in like_selectors:
+                try:
+                    like_buttons = post_element.find_elements(By.XPATH, selector)
+                    if like_buttons:
+                        button = like_buttons[0]
+                        self.driver.execute_script("arguments[0].click();", button)
+                        logger.info("❤️ LIKE effectué")
+                        return True
+                except:
+                    continue
+                    
+            return False
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Erreur like: {e}")
+            return False
+
+    def react_to_post(self, post_element):
+        """Ajouter une réaction"""
+        try:
+            # Trouver le bouton Like pour ouvrir les réactions
+            like_selectors = [
+                ".//div[@aria-label='J'aime']",
+                ".//span[text()='J'aime']/.."
+            ]
+            
+            for selector in like_selectors:
+                try:
+                    like_buttons = post_element.find_elements(By.XPATH, selector)
+                    if like_buttons:
+                        # Passer la souris pour afficher les réactions
+                        button = like_buttons[0]
+                        self.driver.execute_script("arguments[0].dispatchEvent(new MouseEvent('mouseover', {bubbles: true}));", button)
+                        time.sleep(1)
+                        
+                        # Choisir une réaction aléatoire
+                        reaction = random.choice(list(self.reactions.values()))
+                        logger.info(f"{reaction} TENTATIVE RÉACTION")
+                        
+                        # Pour l'instant, like simple (les réactions nécessitent plus de complexité)
+                        self.driver.execute_script("arguments[0].click();", button)
+                        logger.info("❤️ RÉACTION (like) effectuée")
+                        return True
+                        
+                except:
+                    continue
+                    
+            return False
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Erreur réaction: {e}")
+            return self.like_post(post_element)  # Fallback au like
+
+    def comment_on_post(self, post_element):
+        """Commenter un post"""
+        try:
+            # Trouver le champ commentaire
+            comment_selectors = [
+                ".//div[contains(@aria-label, 'Écrivez un commentaire')]",
+                ".//textarea[contains(@placeholder, 'Écrivez un commentaire')]"
+            ]
+            
+            for selector in comment_selectors:
+                try:
+                    comment_boxes = post_element.find_elements(By.XPATH, selector)
+                    if comment_boxes:
+                        comment_box = comment_boxes[0]
+                        self.driver.execute_script("arguments[0].click();", comment_box)
+                        time.sleep(1)
+                        
+                        # Générer commentaire intelligent
+                        comment = self.generate_comment()
+                        
+                        # Taper le commentaire
+                        comment_box.send_keys(comment)
+                        time.sleep(2)
+                        
+                        # Poster
+                        post_buttons = post_element.find_elements(By.XPATH, ".//div[@aria-label='Commenter']")
+                        if post_buttons:
+                            post_buttons[0].click()
+                            logger.info(f"💬 COMMENTAIRE: {comment}")
+                            return True
+                            
+                except:
+                    continue
+                    
+            return False
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Erreur commentaire: {e}")
+            return False
+
+    def generate_comment(self):
+        """Générer commentaire intelligent"""
+        comments = [
+            "Super contenu! 👏",
+            "Très intéressant! 👍", 
+            "J'adore! 😍",
+            "Excellent! 🚀",
+            "Bravo! 👑",
+            "Génial! 💫",
+            "Top! ⭐",
+            "Impressionnant! 🔥",
+            "Magnifique! 🌟",
+            "Fantastique! 💎",
+            "Continue comme ça! 🎯",
+            "Tu assures! 💪",
+            "Trop bien! 😎",
+            "Incroyable! 🤩",
+            "Parfait! ✅"
+        ]
+        return random.choice(comments)
+
+    def smart_scroll(self):
+        """Scroller intelligemment"""
+        scroll_amount = random.randint(400, 900)
+        self.driver.execute_script(f"window.scrollBy(0, {scroll_amount});")
+        time.sleep(random.randint(2, 5))
+
+    def engage_favorites(self, max_actions=8):
+        """Engagement intensif des favoris"""
+        try:
+            logger.info("⭐ ENGAGEMENT INTENSIF FAVORIS...")
+            
+            # Vos pages/groups favoris (À PERSONNALISER)
+            favorites = [
+                "https://www.facebook.com/groups/musicproducers",
+                "https://www.facebook.com/djmag", 
+                "https://www.facebook.com/beatport",
+                "https://www.facebook.com/EDM",
+                "https://www.facebook.com/DJs"
+            ]
+            
+            actions_performed = 0
+            
+            for profile_url in random.sample(favorites, min(3, len(favorites))):
+                if actions_performed >= max_actions:
+                    break
+                    
+                try:
+                    logger.info(f"🎯 Visite de {profile_url}")
+                    self.driver.get(profile_url)
+                    time.sleep(6)
+                    
+                    # Engager les posts de la page
+                    page_actions = self.engage_page_posts(3)  # Max 3 actions par page
+                    actions_performed += page_actions
+                    
+                    # Délai entre les pages
+                    time.sleep(random.randint(15, 30))
+                    
+                except Exception as e:
+                    logger.warning(f"⚠️ Erreur page favorite: {e}")
+                    continue
+
+            return actions_performed
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur favoris: {e}")
+            return 0
+
+    def engage_page_posts(self, max_actions):
+        """Engager les posts d'une page spécifique"""
+        actions = 0
+        try:
+            posts = self.find_engageable_posts()
+            
+            for post in posts[:max_actions]:
+                if self.engage_post(post):
+                    actions += 1
+                    time.sleep(random.randint(8, 15))
+                    
+        except Exception as e:
+            logger.warning(f"⚠️ Erreur engagement page: {e}")
+            
+        return actions
+
+    def close(self):
+        """Fermer le navigateur"""
+        try:
+            self.driver.quit()
+            logger.info("🔚 Navigateur fermé")
+        except:
+            pass
+
+class UltimatePremiumDJLiker:
+    def __init__(self):
         self.stats = {
             'total_actions': 0,
-            'news_feed_actions': 0,
+            'likes': 0,
+            'reactions': 0,
+            'comments': 0,
             'favorites_actions': 0,
             'hourly_actions': 0,
             'daily_actions': 0,
             'last_action_time': None,
-            'session_active': False,
-            'initialized': False
+            'status': 'ULTIMATE_BOT_READY'
         }
         
         self.load_stats()
-
-    def load_session(self):
-        try:
-            with open(self.session_file, 'r') as f:
-                return json.load(f)
-        except FileNotFoundError:
-            return None
-
-    def save_session(self):
-        try:
-            with open(self.session_file, 'w') as f:
-                json.dump(self.getSession(), f)
-        except Exception as e:
-            logger.warning(f"Session save: {e}")
+        
+        # Configuration ULTIME
+        self.config = {
+            'max_actions_per_hour': 30,
+            'max_actions_per_session': 25,
+            'daily_action_limit': 200,
+            'min_delay': 10,
+            'max_delay': 25,
+            'favorites_ratio': 0.3  # 30% d'actions sur favoris
+        }
 
     def load_stats(self):
         try:
             with open('/tmp/premium_stats.json', 'r') as f:
-                self.stats.update(json.load(f))
+                loaded_stats = json.load(f)
+                self.stats.update(loaded_stats)
         except FileNotFoundError:
             self.save_stats()
 
@@ -105,198 +453,44 @@ class PremiumDJLiker(Client):
             logger.warning(f"Stats save: {e}")
 
     def is_active_time(self):
-        """Vérifier si on est dans les heures d'activité AVEC PAUSES"""
+        """Heures d'activité avec pauses"""
         now = datetime.now()
         current_hour = now.hour
         
-        # 🕛 PAUSE NUIT (00h-08h) - ❌ AUCUNE ACTIVITÉ
+        # 🕛 PAUSE NUIT (00h-08h)
         if 0 <= current_hour < 8:
-            logger.info("🌙 PAUSE NUIT - Bot en sommeil")
             return False
         
-        # 🕒 PAUSE DÉJEUNER (13h-15h) - ❌ AUCUNE ACTIVITÉ
+        # 🕒 PAUSE DÉJEUNER (13h-15h)
         if 13 <= current_hour < 15:
-            logger.info("🍽️ PAUSE DÉJEUNER - Bot en pause")
             return False
         
-        # ✅ HEURES D'ACTIVITÉ
-        logger.info("🎯 HEURE D'ACTIVITÉ - Bot actif")
         return True
 
     def safety_check(self):
-        """Vérifications de sécurité AVEC PAUSES"""
+        """Vérifications de sécurité"""
         if not self.is_active_time():
             return False
         
-        if self.stats['hourly_actions'] >= self.premium_config['safety_limits']['max_actions_per_hour']:
+        if self.stats['hourly_actions'] >= self.config['max_actions_per_hour']:
             logger.warning(f"🚨 Limite horaire: {self.stats['hourly_actions']}")
             return False
         
-        if self.stats['daily_actions'] >= self.premium_config['safety_limits']['daily_action_limit']:
+        if self.stats['daily_actions'] >= self.config['daily_action_limit']:
             logger.warning(f"🚨 Limite quotidienne: {self.stats['daily_actions']}")
             return False
         
         return True
 
-    def human_like_delay(self):
-        """Délai humain réaliste PLUS LONG"""
-        delay = random.randint(
-            self.premium_config['safety_limits']['min_delay_between_actions'],
-            self.premium_config['safety_limits']['max_delay_between_actions']
-        )
-        
-        if random.random() < 0.2:  # 20% de pauses plus longues
-            delay += random.randint(10, 20)
-        
-        logger.info(f"⏰ Délai sécurité: {delay}s")
-        time.sleep(delay)
-
-    def login(self):
-        """CORRECTION : Méthode login simplifiée"""
-        try:
-            # fbchat.Client gère déjà la connexion dans __init__
-            # On vérifie juste si on est connecté
-            if self.isLoggedIn():
-                logger.info("✅ Déjà connecté via session")
-                self.stats['initialized'] = True
-                self.save_stats()
-                return True
-            else:
-                # Si pas connecté, tentative avec email/password
-                super().login(EMAIL, PASSWORD)
-                self.save_session()
-                logger.info("✅ Nouvelle connexion réussie")
-                self.stats['initialized'] = True
-                self.save_stats()
-                return True
-                
-        except Exception as e:
-            logger.error(f"❌ Erreur connexion: {e}")
-            return False
-
-    def engage_news_feed_comprehensive(self):
-        """Engagement COMPLET du fil d'actualité"""
-        if not self.safety_check():
-            logger.info("⏰ Hors créneau - Session annulée")
-            return 0
-            
-        logger.info("📰 ENGAGEMENT TOTAL FIL D'ACTUALITÉ")
-        
-        try:
-            actions_performed = 0
-            max_actions = random.randint(12, 20)
-            
-            for i in range(max_actions):
-                if not self.safety_check():
-                    break
-                
-                # Simulation d'actions (à remplacer par les vraies méthodes fbchat)
-                post_id = f"news_feed_post_{random.randint(10000, 99999)}"
-                logger.info("❤️ LIKE AUTO - Publication fil actu")
-                
-                # Réaction aléatoire (60% de chance)
-                if random.random() < 0.6:
-                    reaction = random.choices(
-                        self.premium_config['reactions_arsenal']['reactions'],
-                        weights=self.premium_config['reactions_arsenal']['weights']
-                    )[0]
-                    logger.info(f"{reaction} RÉACTION AUTO - Fil actu")
-                
-                # Commentaire intelligent (30% de chance)
-                if random.random() < 0.3:
-                    comment = self.generate_smart_comment()
-                    logger.info(f"💬 COMMENTAIRE: {comment}")
-                
-                actions_performed += 1
-                self.update_stats('news_feed')
-                self.human_like_delay()
-                
-                # Pause micro toutes les 6 actions
-                if actions_performed % 6 == 0:
-                    pause = random.randint(30, 60)
-                    logger.info(f"💤 Pause sécurité: {pause}s")
-                    time.sleep(pause)
-            
-            logger.info(f"✅ Fil actu: {actions_performed} actions sécurisées")
-            return actions_performed
-            
-        except Exception as e:
-            logger.error(f"❌ Erreur fil actu: {e}")
-            return 0
-
-    def engage_favorites_intensive(self):
-        """Engagement INTENSIF des favoris"""
-        if not self.safety_check():
-            return 0
-            
-        logger.info("⭐ ENGAGEMENT INTENSIF FAVORIS")
-        
-        try:
-            actions_performed = 0
-            max_actions = random.randint(6, 12)
-            
-            for i in range(max_actions):
-                if not self.safety_check():
-                    break
-                
-                # Simulation d'actions sur favoris
-                favorite_id = f"favorite_post_{random.randint(1000, 9999)}"
-                logger.info("❤️ LIKE AUTO - Favori")
-                
-                # Réaction favoris (70% de chance)
-                if random.random() < 0.7:
-                    reaction = random.choice(['❤️', '🥰', '👍', '😮'])
-                    logger.info(f"{reaction} RÉACTION - Favori")
-                
-                # Commentaire personnalisé favoris (40% de chance)
-                if random.random() < 0.4:
-                    comment = random.choice([
-                        "Toujours du contenu qualité! 🌟",
-                        "Merci pour l'inspiration quotidienne! 🚀",
-                        "Vous êtes une référence! 👑",
-                        "Contenu exceptionnel comme toujours! 💫",
-                        "J'apprends toujours de vous! 📚"
-                    ])
-                    logger.info(f"💬 FAVORI: {comment}")
-                
-                actions_performed += 1
-                self.update_stats('favorites')
-                self.human_like_delay()
-            
-            logger.info(f"✅ Favoris: {actions_performed} actions sécurisées")
-            return actions_performed
-            
-        except Exception as e:
-            logger.error(f"❌ Erreur favoris: {e}")
-            return 0
-
-    def generate_smart_comment(self):
-        """Générer commentaire intelligent et naturel"""
-        comment_templates = [
-            "Super contenu! Ça mérite plus de visibilité! 🔥",
-            "Excellente publication! Je partage l'avis! 👍",
-            "Très intéressant! Merci pour le partage! 📚",
-            "J'adore ce genre de contenu! Continuez! 💫",
-            "Bravo pour cette publication qualité! ⭐",
-            "Message important! Tout le monde devrait voir ça! 🎯",
-            "Contenu qui inspire! Merci! 🚀",
-            "Toujours un plaisir de vous lire! 😊",
-            "Vous avez totalement raison! 👏",
-            "Merci pour ces conseils précieux! 💎"
-        ]
-        return random.choice(comment_templates)
-
-    def update_stats(self, action_type):
+    def update_stats(self, actions, action_type='general'):
         """Mettre à jour les statistiques"""
-        self.stats['total_actions'] += 1
-        self.stats['hourly_actions'] += 1
-        self.stats['daily_actions'] += 1
+        self.stats['total_actions'] += actions
+        self.stats['hourly_actions'] += actions
+        self.stats['daily_actions'] += actions
         self.stats['last_action_time'] = datetime.now().isoformat()
         
-        if action_type == 'news_feed':
-            self.stats['news_feed_actions'] += 1
-        elif action_type == 'favorites':
-            self.stats['favorites_actions'] += 1
+        if action_type == 'favorites':
+            self.stats['favorites_actions'] += actions
         
         self.save_stats()
 
@@ -315,64 +509,71 @@ class PremiumDJLiker(Client):
             self.save_stats()
             logger.info("🔄 Compteur horaire reset")
 
-    def premium_engagement_session(self):
-        """Session d'engagement PREMIUM sécurisée"""
-        logger.info("🚀 DÉMARRAGE SESSION PREMIUM SÉCURISÉE")
+    def ultimate_engagement_session(self):
+        """SESSION ULTIME D'ENGAGEMENT CONSTANT"""
+        logger.info("🚀 DÉMARRAGE SESSION ULTIME CONSTANTE")
         
-        if not self.is_active_time():
-            logger.info("⏰ HORS CRÉNEAU - Session annulée (pause sécurité)")
+        if not self.safety_check():
+            logger.info("⏰ Session annulée (pause ou limite)")
             return 0
             
         self.reset_hourly_counter()
         
+        bot = UltimateFacebookBot()
+        total_actions = 0
+        
         try:
-            total_actions = 0
+            if not bot.login():
+                return 0
             
-            # 🎯 STRATÉGIE: 80% fil actu, 20% favoris
-            strategy_choice = random.choices(
-                ['news_feed', 'favorites'], 
-                weights=[80, 20]
-            )[0]
+            time.sleep(3)
             
-            if strategy_choice == 'news_feed':
-                news_actions = self.engage_news_feed_comprehensive()
-                total_actions += news_actions
-                
-                if random.random() < 0.3 and self.safety_check():
-                    fav_actions = self.engage_favorites_intensive()
-                    total_actions += fav_actions
-            else:
-                fav_actions = self.engage_favorites_intensive()
+            # Stratégie mixte: Fil d'actualité + Favoris
+            news_actions = bot.scroll_and_engage(
+                max_actions=random.randint(12, 20)
+            )
+            total_actions += news_actions
+            
+            # Engagement favoris (30% du temps)
+            if random.random() < self.config['favorites_ratio'] and self.safety_check():
+                fav_actions = bot.engage_favorites(
+                    max_actions=random.randint(5, 10)
+                )
                 total_actions += fav_actions
+                self.update_stats(fav_actions, 'favorites')
             
-            logger.info(f"🎯 Session sécurisée: {total_actions} actions")
+            self.update_stats(total_actions)
+            logger.info(f"🎯 SESSION ULTIME TERMINÉE: {total_actions} actions")
             return total_actions
             
         except Exception as e:
-            logger.error(f"❌ Erreur session: {e}")
+            logger.error(f"💥 ERREUR SESSION: {e}")
             return 0
+        finally:
+            bot.close()
 
     def get_detailed_stats(self):
         """Statistiques détaillées"""
         return {
             'total_actions': self.stats['total_actions'],
-            'news_feed_actions': self.stats['news_feed_actions'],
-            'favorites_actions': self.stats['favorites_actions'],
             'hourly_actions': self.stats['hourly_actions'],
             'daily_actions': self.stats['daily_actions'],
-            'initialized': self.stats['initialized'],
+            'favorites_actions': self.stats['favorites_actions'],
+            'last_action': self.stats['last_action_time'],
             'active_time': self.is_active_time(),
-            'status': 'PREMIUM_ACTIVE_SAFE'
+            'status': self.stats['status'],
+            'mode': 'ULTIMATE_CONSTANT_ENGAGEMENT'
         }
 
-# Routes Flask
+# Routes Flask (similaires mais adaptées)
 @app.route('/')
 def home():
     return """
-    🚀 DJ Liker PREMIUM - Mode Sécurisé
+    🚀 DJ Liker ULTIME - ENGAGEMENT CONSTANT
     <br>🎯 Activité: 08h-13h & 15h-00h
-    <br>🛑 Pauses: 13h-15h & 00h-08h
-    <br>🛡️ Statut: ANTI-BAN MAXIMUM
+    <br>🛑 Pauses: 13h-15h & 00h-08h  
+    <br>❤️ Likes, Réactions, Commentaires RÉELS
+    <br>🔄 Engagement constant et intelligent
     <br><a href="/stats">📊 Voir les stats</a>
     <br><a href="/start-now">🚀 Démarrer maintenant</a>
     <br><a href="/schedule">📅 Voir planning</a>
@@ -383,36 +584,35 @@ def stats():
     liker = app.config.get('liker')
     if liker:
         return liker.get_detailed_stats()
-    return {"status": "not_initialized", "message": "Utilisez /start-now pour démarrer"}
+    return {"status": "ready", "message": "Bot ultime prêt - Utilisez /start-now"}
 
 @app.route('/health')
 def health():
-    return {"status": "healthy", "service": "dj_liker_premium_safe", "timestamp": datetime.now().isoformat()}
+    return {"status": "healthy", "service": "ultimate_facebook_bot", "timestamp": datetime.now().isoformat()}
 
 @app.route('/start-now')
 def start_now():
-    """Démarrer le bot immédiatement (si dans les heures actives)"""
+    """Démarrer le bot ultime immédiatement"""
     try:
-        logger.info("🎯 DÉMARRAGE MANUEL DEMANDÉ")
+        logger.info("🎯 DÉMARRAGE MANUEL BOT ULTIME DEMANDÉ")
         
-        liker = PremiumDJLiker()
-        if liker.login():
-            if not liker.is_active_time():
-                return {
-                    "status": "paused",
-                    "message": "⏰ Bot en pause (hors créneau). Activité: 08h-13h & 15h-00h"
-                }
-            
-            actions = liker.premium_engagement_session()
-            app.config['liker'] = liker
-            
+        liker = UltimatePremiumDJLiker()
+        
+        if not liker.is_active_time():
             return {
-                "status": "success",
-                "actions": actions,
-                "message": f"✅ Bot démarré! {actions} actions effectuées"
+                "status": "paused", 
+                "message": "⏰ Bot en pause. Activité: 08h-13h & 15h-00h"
             }
-        else:
-            return {"status": "error", "message": "❌ Échec connexion Facebook"}
+        
+        actions = liker.ultimate_engagement_session()
+        app.config['liker'] = liker
+        
+        return {
+            "status": "success",
+            "actions": actions,
+            "message": f"✅ Bot ULTIME démarré! {actions} actions d'engagement constant",
+            "mode": "ULTIMATE_CONSTANT_ENGAGEMENT"
+        }
             
     except Exception as e:
         logger.error(f"❌ Erreur démarrage: {e}")
@@ -420,97 +620,92 @@ def start_now():
 
 @app.route('/schedule')
 def show_schedule():
-    """Afficher le planning des pauses"""
+    """Afficher le planning"""
     schedule_info = {
         "active_periods": [
             "08:00-13:00 → Matinée intensive",
-            "15:00-00:00 → Soirée active"
+            "15:00-00:00 → Soirée active" 
         ],
         "pauses": [
             "13:00-15:00 → Pause déjeuner",
             "00:00-08:00 → Pause nuit"
         ],
         "sessions_auto": [
-            "08:30, 10:00, 11:30",
-            "15:30, 17:00, 19:00, 21:00, 23:00"
+            "08:30, 09:45, 11:00, 12:15",
+            "15:30, 17:00, 18:30, 20:00, 21:30, 23:00"
         ],
+        "engagement_types": ["Likes", "Réactions", "Commentaires", "Favoris"],
         "current_time": datetime.now().strftime("%H:%M"),
-        "is_active_now": PremiumDJLiker().is_active_time()
+        "is_active_now": UltimatePremiumDJLiker().is_active_time(),
+        "mode": "ULTIMATE_CONSTANT_ENGAGEMENT"
     }
     return schedule_info
 
-class PremiumScheduler:
+class UltimateScheduler:
     def __init__(self):
         self.liker = None
         self.is_running = True
     
     def initialize_bot(self):
-        """Initialiser le bot Facebook"""
+        """Initialiser le bot ultime"""
         try:
-            logger.info("🎯 INITIALISATION AUTOMATIQUE DU BOT SÉCURISÉ...")
-            self.liker = PremiumDJLiker()
-            success = self.liker.login()
+            logger.info("🎯 INITIALISATION BOT ULTIME...")
+            self.liker = UltimatePremiumDJLiker()
             
-            if success:
-                logger.info("✅ BOT INITIALISÉ AVEC SUCCÈS!")
-                app.config['liker'] = self.liker
+            logger.info("✅ BOT ULTIME INITIALISÉ!")
+            app.config['liker'] = self.liker
                 
-                if self.liker.is_active_time():
-                    logger.info("🚀 DÉMARRAGE SESSION IMMÉDIATE...")
-                    Thread(target=self.run_premium_session, daemon=True).start()
-                else:
-                    logger.info("⏰ Hors créneau - Session différée")
-                
-                return True
+            if self.liker.is_active_time():
+                logger.info("🚀 DÉMARRAGE SESSION IMMÉDIATE...")
+                Thread(target=self.run_ultimate_session, daemon=True).start()
             else:
-                logger.error("❌ ÉCHEC INITIALISATION BOT")
-                return False
+                logger.info("⏰ Hors créneau - Session différée")
+            
+            return True
                 
         except Exception as e:
             logger.error(f"💥 ERREUR INITIALISATION: {e}")
             return False
     
-    def run_premium_session(self):
-        """Exécuter une session (avec vérification heure)"""
+    def run_ultimate_session(self):
+        """Exécuter une session ultime"""
         if not self.liker:
-            logger.error("❌ Bot non initialisé")
             return
         
         if not self.liker.is_active_time():
-            logger.info("⏰ Hors créneau - Session annulée")
             return
         
         try:
-            logger.info("🎯 DÉMARRAGE SESSION PROGRAMMÉE")
-            actions = self.liker.premium_engagement_session()
-            logger.info(f"✅ Session terminée: {actions} actions")
+            logger.info("🎯 DÉMARRAGE SESSION ULTIME PROGRAMMÉE")
+            actions = self.liker.ultimate_engagement_session()
+            logger.info(f"✅ Session ultime: {actions} actions")
             
         except Exception as e:
             logger.error(f"❌ Erreur session: {e}")
     
-    def start_premium_schedule(self):
-        """🕒 PLANIFICATION AVEC PAUSES SÉCURISÉES"""
+    def start_ultimate_schedule(self):
+        """🕒 PLANIFICATION ULTIME CONSTANTE"""
         
-        # 🕗 MATINÉE INTENSIVE (08h-13h)
-        schedule.every().day.at("08:30").do(self.run_premium_session)
-        schedule.every().day.at("10:00").do(self.run_premium_session)
-        schedule.every().day.at("11:30").do(self.run_premium_session)
+        # 🕗 MATINÉE INTENSIVE (plus de sessions)
+        schedule.every().day.at("08:30").do(self.run_ultimate_session)
+        schedule.every().day.at("09:45").do(self.run_ultimate_session) 
+        schedule.every().day.at("11:00").do(self.run_ultimate_session)
+        schedule.every().day.at("12:15").do(self.run_ultimate_session)
         
-        # 🕒 PAUSE DÉJEUNER (13h-15h) - ❌ RIEN
+        # 🕒 PAUSE DÉJEUNER (13h-15h)
         
-        # 🕟 APRÈS-MIDI ACTIF (15h-00h)
-        schedule.every().day.at("15:30").do(self.run_premium_session)
-        schedule.every().day.at("17:00").do(self.run_premium_session)
-        schedule.every().day.at("19:00").do(self.run_premium_session)
-        schedule.every().day.at("21:00").do(self.run_premium_session)
-        schedule.every().day.at("23:00").do(self.run_premium_session)
-        
-        # 🕛 PAUSE NUIT (00h-08h) - ❌ RIEN
+        # 🕟 APRÈS-MIDI/SOIRÉE ACTIVE (sessions rapprochées)
+        schedule.every().day.at("15:30").do(self.run_ultimate_session)
+        schedule.every().day.at("17:00").do(self.run_ultimate_session)
+        schedule.every().day.at("18:30").do(self.run_ultimate_session)
+        schedule.every().day.at("20:00").do(self.run_ultimate_session)
+        schedule.every().day.at("21:30").do(self.run_ultimate_session)
+        schedule.every().day.at("23:00").do(self.run_ultimate_session)
         
         # 🔄 MAINTENANCE
         schedule.every(1).hours.do(self.reset_counters)
         
-        logger.info("📅 PLANIFICATEUR SÉCURISÉ ACTIVÉ - Pauses intégrées")
+        logger.info("📅 PLANIFICATEUR ULTIME ACTIVÉ - Engagement constant")
         
         while self.is_running:
             try:
@@ -525,28 +720,28 @@ class PremiumScheduler:
             self.liker.reset_hourly_counter()
 
 def run_flask():
-    """Démarrer Flask pour Render"""
+    """Démarrer Flask"""
     port = int(os.environ.get('PORT', 10000))
     logger.info(f"🌐 Démarrage serveur sur le port {port}")
     app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 def main():
-    logger.info("🚀 DJ LIKER PREMIUM SÉCURISÉ - DÉMARRAGE")
+    logger.info("🚀 DJ LIKER ULTIME - ENGAGEMENT CONSTANT DÉMARRAGE")
     
-    # 🎯 INITIALISER ET DÉMARRER LE BOT
-    scheduler = PremiumScheduler()
+    # 🎯 INITIALISER LE BOT ULTIME
+    scheduler = UltimateScheduler()
     app.config['scheduler'] = scheduler
     
-    # DÉMARRAGE AUTOMATIQUE AU LANCEMENT
-    logger.info("🎯 TENTATIVE DE DÉMARRAGE AUTOMATIQUE...")
+    # DÉMARRAGE AUTOMATIQUE
+    logger.info("🎯 DÉMARRAGE AUTOMATIQUE BOT ULTIME...")
     init_thread = Thread(target=scheduler.initialize_bot, daemon=True)
     init_thread.start()
     
     # DÉMARRER LE PLANIFICATEUR
-    scheduler_thread = Thread(target=scheduler.start_premium_schedule, daemon=True)
+    scheduler_thread = Thread(target=scheduler.start_ultimate_schedule, daemon=True)
     scheduler_thread.start()
     
-    logger.info("✅ APPLICATION PRÊTE - Mode sécurisé activé")
+    logger.info("✅ BOT ULTIME PRÊT - Engagement constant activé")
     
     # DÉMARRER FLASK
     run_flask()
